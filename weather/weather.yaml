@@ -1,0 +1,251 @@
+substitutions:
+  name: plusivo-esp32
+  friendly_name: Plusivo ESP32
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  min_version: 2024.6.0
+  name_add_mac_suffix: false
+  project:
+    name: esphome.web
+    version: '1.0'
+  # on_boot:
+  #   priority: 1000
+  #   then:
+  #     - lambda: |-
+  #         pinMode(13, OUTPUT);
+  #         digitalWrite(13, HIGH);
+globals:
+  - id: temperature_humidity_verified
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: batt_voltage_verified
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+    
+script:
+  - id: invert_led
+    then:
+      - switch.toggle: led_builtin
+
+  - id: blink
+    then:
+      - switch.toggle: led_builtin
+      - delay: 1000ms
+      - switch.toggle: led_builtin
+      - delay: 1000ms
+
+  - id: check_and_poweroff
+    then:
+      - repeat: 
+          count: 10 #read the adc enough times to fill the filter window
+          then:
+            - component.update: batt_adc
+            - delay: 10ms
+      - component.update: wifi_signal_db
+      - component.update: dth_id
+      - wait_until: 
+          timeout: 10s
+          condition: 
+            - lambda: 
+                return id(temperature_humidity_verified);
+      # - deep_sleep.prevent: deepsleep
+      # - wait_until: # if the mailbox doors are left open, it also serves as an OTA mode indicator - don't sleep
+      #     condition:
+      #       binary_sensor.is_off: access_doors
+      - component.update: upT
+      - delay: 100ms #hopefully uptime will make it in time, as the more stuff we do after now the less accurate the uptime metric will be.
+      # - deep_sleep.allow: deepsleep
+      # - deep_sleep.enter: deepsleep
+
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+mqtt:
+  broker: homeassistant.lan
+  port: 1883
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  topic_prefix: 'sensors'
+  birth_message: 
+  will_message: 
+  on_connect: 
+    then:
+      - script.execute: blink
+      - script.execute: check_and_poweroff
+
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+# api:
+
+# Allow Over-The-Air updates
+# ota:
+#   - platform: esphome
+#     password: "9a2eb13bc4121f4ea40b70ecf639b55e"
+
+# Allow provisioning Wi-Fi via serial
+improv_serial:
+
+wifi:
+  # Set up a wifi access point
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  manual_ip:
+    static_ip: 192.168.1.126
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+    dns1: 192.168.1.1
+    dns2: 8.8.8.8  
+  output_power: 13dB
+  power_save_mode: HIGH
+
+  fast_connect: true
+  on_connect:
+    then:
+      - script.execute: blink #nothing like a good old led debugging...
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "plusivo esp32 Fallback Hotspot"
+    password: "passwd1234"
+    ap_timeout: 15min
+
+switch:
+  - platform: restart
+    name: "Reset"
+
+  - platform: shutdown
+    name: "Deepsleep"
+
+  - platform: gpio
+    pin:
+      number: 2
+      mode:
+        output: True   
+    name: "onboard LED"
+    id: led_builtin
+    setup_priority: 800
+    restore_mode: ALWAYS_OFF
+
+
+
+# In combination with the `ap` this allows the user
+# to provision wifi credentials to the device via WiFi AP.
+captive_portal:
+
+# deep_sleep:
+#   run_duration: 30sec #should kick in in case wifi doesn't connect in 30 sec but for some reason it doesn't...
+#   id: deepsleep
+
+sensor:
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: never
+    entity_category: "diagnostic"
+
+  - platform: copy # Reports the WiFi signal strength in %
+    source_id: wifi_signal_db
+    id: wifi_signal_percent
+    name: "WiFi Signal Percent"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+    unit_of_measurement: "Signal %"
+    entity_category: "diagnostic"
+
+  - platform: uptime
+    name: "Uptime"
+    id: upT
+    update_interval: never
+    unit_of_measurement: s
+    accuracy_decimals: 3
+
+  - platform: dht
+    model: DHT22
+    id: dth_id
+    pin: 26
+    temperature:
+      name: "Weather Temperature"
+      filters:
+        - lambda: |-
+            id(temperature_humidity_verified) = true;
+            return x;
+    humidity:
+      name: "Weathere Humidity"
+      filters:
+        - lambda: |-
+            id(temperature_humidity_verified) = true;
+            return x;
+    update_interval: never
+    # has_target:
+    #   on_state:
+    #     - component.update: light_sensor
+
+  - platform: adc
+    name: "Battery ADC"
+    id: batt_adc
+    pin: A0
+    accuracy_decimals: 2
+    update_interval: never
+    attenuation: auto
+    # filters:
+    # #use moving median to smooth spikes
+    #   - median:
+    #       window_size: 10
+    #       send_every: 10
+    #       send_first_at: 10
+    #   - delta: 0.1 #Only send values to HA if they change 
+    #   - throttle: 30s #Limit values sent to Ha    
+    # # samples: 10
+    # filters:
+    #   - multiply: 2.0  # The voltage divider requires us to multiply by 2
+    # pin: A0
+    # update_interval: never
+    # attenuation: 11db
+    # accuracy_decimals: 2
+    filters: 
+      - multiply: 44
+      # - offset: +0.05 
+
+  - platform: copy
+    source_id: batt_adc
+    id: batt_voltage_filtered
+    icon: "mdi:battery"
+    name:  Battery Voltage
+    unit_of_measurement: V
+    accuracy_decimals: 2
+    filters:
+      - max: 
+          window_size: 10
+          send_every: 10
+          send_first_at: 10
+
+  - platform: copy
+    source_id: batt_voltage_filtered
+    id: batt_level
+    icon: "mdi:battery"
+    name: Battery Percent
+    unit_of_measurement: '%'
+    accuracy_decimals: 0
+    filters:
+      # Map from voltage to Battery level
+      - calibrate_linear:
+          - 3.0 -> 0 
+          - 4.1 -> 100
+      #Overide values less than 0% and more than 100%
+      - lambda: |
+          if (x < 0) return 0; 
+          else if (x > 100) return 100;
+          else return ceil(x / 5) * 5;
+  - platform: internal_temperature
+    name: "Internal Temperature Sensor"
+
