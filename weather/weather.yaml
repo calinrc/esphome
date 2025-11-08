@@ -1,6 +1,6 @@
 substitutions:
-  name: plusivo-esp32
-  friendly_name: Plusivo ESP32
+  name: wheather-plusivo-esp32
+  friendly_name: Wheather Station Plusivo ESP32
 
 esphome:
   name: ${name}
