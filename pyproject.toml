@@ -1,0 +1,17 @@
+[project]
+name = "esphome"
+version = "0.1.0"
+description = "ESP Home Experiments"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pip>=25.3",
+]
+
+[dependency-groups]
+dev = [
+    "esphome",
+]
+
+[tool.uv.sources]
+esphome = { workspace = true }
