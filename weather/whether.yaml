@@ -1,11 +1,11 @@
 substitutions:
-  name: wheather-plusivo-esp32
-  friendly_name: Wheather Station Plusivo ESP32
+  name: whether-plusivo-esp32
+  friendly_name: Whether Station Plusivo ESP32
 
 esphome:
   name: ${name}
   friendly_name: ${friendly_name}
-  min_version: 2024.6.0
+  min_version: 2025.10.0
   name_add_mac_suffix: false
   project:
     name: esphome.web
@@ -130,7 +130,7 @@ switch:
     pin:
       number: 2
       mode:
-        output: True   
+        output: True
     name: "onboard LED"
     id: led_builtin
     setup_priority: 800
@@ -180,7 +180,7 @@ sensor:
             id(temperature_humidity_verified) = true;
             return x;
     humidity:
-      name: "Weathere Humidity"
+      name: "Weather Humidity"
       filters:
         - lambda: |-
             id(temperature_humidity_verified) = true;
