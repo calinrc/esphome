@@ -27,12 +27,12 @@ Note: You need a wired connection for first boot and  first startup migh take up
 - Create My Smart Home, Setup user and password, region etc
 - (Optional) Make Home Assistant run on wireless network `Settings` -> `System` -> `Network` -> `Configure network interfaces` -> `wlan0`
 
-- Install MQTT Server `Settings` -> `Add-ons` -> `Add-on Store` -> `Mosquitto broker` -> `Install`
-    - Config: `Settings` -> `Add-ons` -> `Mosquitto broker` -> `Configuration` -> `Options Login` -> `Add` (Add a login and password for Mosquitto Service)
-    - Start Service: `Settings` -> `Add-ons` -> `Mosquitto broker` -> Start
+- Install MQTT Server `Settings` -> `Apps` -> `Install app` -> `Mosquitto broker` -> `Install`
+    - Config: `Settings` -> `Apps` -> `Mosquitto broker App` -> `Configuration` -> `Logins` -> `Add` (Add a login and password for Mosquitto Service)
+    - Start Service: `Settings` -> `Apps` -> `Mosquitto broker` -> Start
 
     Note: From Linux you can explore MQTT Using MQTT Explorer (Use the above username and password to connect to your instance)
-- Install ESP Home Support: `Settings` -> `Add-ons` -> `Add-on Store` -> `ESPHome Device Builder` -> `Install` -> `Start` -> `Open WebUI`
+- Install ESP Home Support: `Settings` -> `Apps` -> `Install` -> `ESPHome Device Builder` -> `Install` -> `Start` -> `Open WebUI`
 
 ### ESPHome
 
