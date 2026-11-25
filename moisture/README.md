@@ -1,13 +1,13 @@
 # Moisture Sensor
 
-This module is an ESPHome configuration for a soil moisture sensor. It runs on an ESP32 board (`esp32dev` in ESPHome) and reads an HW-390 resistive soil moisture probe through the ESP32's analog-to-digital converter (ADC). The readings are converted to a percentage and published to Home Assistant, both through the ESPHome native API and over MQTT.
+This module is a low-power ESPHome configuration for a soil moisture sensor. It runs on an ESP32 board (`esp32dev` in ESPHome) and reads an HW-390 resistive soil moisture probe through the ESP32's analog-to-digital converter (ADC). Each cycle the device wakes up, powers the sensor, publishes one reading to Home Assistant over MQTT, and goes back to deep sleep.
 
 ## Features
-- Reads soil moisture from an HW-390 analog output every 60 seconds
+- Deep sleep between measurements (default: one reading every 30 minutes)
+- Sensor is powered from a GPIO pin only while it is being read
+- MQTT only: no native API, no OTA updates, no captive portal or fallback access point
 - Converts the raw voltage to a 0–100 % value with a linear calibration (dry and wet points)
 - Clamps the result so it never goes below 0 % or above 100 %
-- Publishes to Home Assistant through the ESPHome API and MQTT (topic prefix `sensors`)
-- Supports OTA updates and Wi-Fi, with a captive portal fallback hotspot
 - Sensor is exposed with `device_class: moisture`, so Home Assistant treats it as a moisture entity
 
 ## Hardware
@@ -18,16 +18,28 @@ This module is an ESPHome configuration for a soil moisture sensor. It runs on a
 
 ## Pinout and wiring
 
-Connect the HW-390 module to the ESP32 as shown below. Only the analog output (AO) is used by this configuration. The digital output (DO) is optional and not read by the YAML.
+The sensor is powered from GPIO27 instead of a fixed 3.3 V rail, so the probe is only energised during a reading. This is the main power saving in this configuration.
 
-| HW-390 pin | ESP32 pin | Notes |
-|------------|-----------|-------|
-| VCC        | 3V3       | Power from 3.3 V. Do not use 5 V, because the analog output can rise above the ESP32 ADC maximum of about 3.3 V and damage GPIO34. |
-| GND        | GND       | Common ground with the ESP32. |
-| AO         | GPIO34    | Analog input (ADC1, channel 6). GPIO34 is input-only, which is fine for this sensor. |
+| HW-390 pin | ESP32 pin     | Notes |
+|------------|---------------|-------|
+| VCC        | GPIO27        | Switched 3.3 V supply, driven by the `sensor_power` output. Do not connect to 5 V: the analog output can rise above the ESP32 ADC maximum of about 3.3 V and damage GPIO34. |
+| GND        | GND           | Common ground with the ESP32. |
+| AO         | GPIO34        | Analog input (ADC1, channel 6). GPIO34 is input-only, which is fine for this sensor. |
 | DO         | Not connected | Optional digital threshold output. Leave unconnected for this configuration. |
 
 Pin labels can vary slightly between HW-390 boards. Check the silkscreen on your module before wiring.
+
+## Configuration
+
+The main settings are at the top of `moisture.yaml`:
+
+| Substitution       | Default     | Purpose |
+|--------------------|-------------|---------|
+| `sleep_duration`   | `30min`     | Time between measurements |
+| `sensor_power_pin` | `GPIO27`    | Pin that switches sensor VCC |
+| `sensor_pin`       | `GPIO34`    | ADC pin that reads the AO output |
+
+`deep_sleep.run_duration` is set to 45 seconds. If Wi-Fi or MQTT is slow or fails, the device still goes back to sleep after this time.
 
 ## Calibration
 
@@ -39,19 +51,18 @@ calibrate_linear:
   - 1.25 -> 100.0   # fully saturated soil voltage
 ```
 
-These values are examples from one test setup. To calibrate your own sensor:
+These values are examples from one test setup. Because the device sleeps between readings, you need to read the raw voltage from Home Assistant after a cycle, or from the device logs during a manual test. To calibrate your own sensor:
 
-1. Flash the firmware and open the device logs or Home Assistant.
-2. Hold the probe in open air (or dry soil) and note the raw voltage. Use this as the 0 % value.
-3. Submerge the probe tip in a glass of water (up to the same mark as in the soil) and note the voltage. Use this as the 100 % value.
-4. Replace the two numbers in `calibrate_linear` and reflash.
+1. Hold the probe in open air (or dry soil) and note the raw voltage. Use this as the 0 % value.
+2. Submerge the probe tip in a glass of water (up to the same mark as in the soil) and note the voltage. Use this as the 100 % value.
+3. Replace the two numbers in `calibrate_linear` and flash the device again over USB.
 
 ## Usage
 1. Create a `secrets.yaml` file next to `moisture.yaml` with the keys the config uses: `wifi_ssid`, `wifi_password`, `mqtt_user`, and `mqtt_password`.
-2. Flash the ESPHome firmware to the ESP32 using `moisture.yaml`.
+2. Flash the ESPHome firmware to the ESP32 using `moisture.yaml` (see Installation).
 3. Wire the sensor as described in the Pinout section.
 4. Calibrate the dry and wet voltages for your probe.
-5. In Home Assistant, check that the **Soil Moisture** entity appears and reports values between 0 and 100 %.
+5. In Home Assistant, check that the **Soil Moisture** entity appears and updates once per sleep interval, with values between 0 and 100 %.
 
 ## Requirements
 - ESP32 board
@@ -63,12 +74,14 @@ These values are examples from one test setup. To calibrate your own sensor:
 
 1. Install ESPHome, or open the ESPHome Dashboard in Home Assistant.
 2. Create the `secrets.yaml` file described in Usage.
-3. Run `esphome run moisture.yaml` to compile and flash the board over USB for the first time.
-4. After the first flash, use OTA updates from the dashboard or `esphome run moisture.yaml --device <ip-or-host>`.
-5. In Home Assistant, go to **Settings → Devices & services** and accept the discovered ESPHome device. If it does not appear, add it manually with **Add integration → ESPHome** and the device IP address.
+3. Connect the ESP32 by USB and run `esphome run moisture.yaml` to compile and flash it.
+4. Updates after this first flash must also be done over USB, because OTA is disabled.
+5. In Home Assistant, check that the MQTT device appears under **Settings → Devices & services → MQTT**. The sensor is published with MQTT discovery and topic prefix `sensors`.
 
 ## Notes and recommendations
-- **Corrosion:** Resistive probes corrode when powered all the time. For long-term use, power the sensor from a GPIO pin, switch it on before each reading, and switch it off afterwards. This is not included in the current YAML.
-- **Secrets:** The current `moisture.yaml` contains the API encryption key and the fallback hotspot password in plain text. Move them into `secrets.yaml` before sharing or committing this repository.
-- **Filtering:** Soil moisture changes slowly. A moving-average filter can smooth out noise if the readings jump around.
+- **Corrosion:** The probe is powered only during a reading, which reduces corrosion compared with continuous power.
+- **Updating firmware:** With OTA and the API removed, the device can only be reflashed by USB. Keep the ESP32 accessible, or temporarily re-enable OTA in `moisture.yaml` if you need remote updates.
+- **Debugging:** Logging is set to `WARN` to save time awake. Raise `logger: level` to `DEBUG` while calibrating or troubleshooting.
+- **Secrets:** Keep `wifi_ssid`, `wifi_password`, `mqtt_user`, and `mqtt_password` in `secrets.yaml`. Do not commit that file.
+- **Filtering:** Soil moisture changes slowly, so a moving-average filter can be added if readings are noisy. Each cycle takes only one reading, so averaging would need several readings per cycle.
 - **ESP32 ADC accuracy:** The ESP32 ADC is non-linear, especially near the top of its range. Keep the sensor voltage well within the calibrated range for best results.

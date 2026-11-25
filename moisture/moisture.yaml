@@ -1,9 +1,18 @@
 # Board: ESPHome Starter Kit By Apollo (Apollo Automation)
 # Definition: definitions/boards/apollo-esk-1/manifest.yaml
+#
+# Low-power build: MQTT only, no API, no OTA, no captive portal.
+# The ESP32 wakes up, powers the soil sensor, publishes one reading
+# over MQTT and goes back to deep sleep.
+#
+# Wiring for the sensor power pin (GPIO27) is documented in README.md.
 
 substitutions:
   name: esphome-moisture
   friendly_name: ESPHome-moisture
+  sleep_duration: 2min     # time between measurements
+  sensor_power_pin: GPIO27  # switches VCC of the HW-390 sensor
+  sensor_pin: GPIO34        # analog output (AO) of the HW-390 sensor
 
 esphome:
   name: ${name}
@@ -14,29 +23,32 @@ esp32:
   board: esp32dev
   framework:
     type: arduino
-    
+
+# Serial logging costs time and power; keep only warnings and errors.
 logger:
+  level: WARN
 
-api:
-  encryption:
-    key: !secret api_encryption_key
-
-ota:
-  - platform: esphome
-    encryption:
-    
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  ap:
-    ssid: ESPHome-moistur Fallback Hotspot
-    password: "9zh5JcGIjSAU"
+  power_save_mode: light
+  # No fallback access point: if Wi-Fi fails, the cycle simply ends at run_duration.
 
-captive_portal:
+# Hard limit on awake time per cycle. If Wi-Fi or MQTT fails,
+# the device still goes back to sleep after this long.
+deep_sleep:
+  run_duration: 45s
+  sleep_duration: ${sleep_duration}
+
+# Output that powers the sensor only while it is being read.
+output:
+  - platform: gpio
+    pin: ${sensor_power_pin}
+    id: sensor_power
 
 sensor:
   - platform: adc
-    pin: GPIO34
+    pin: ${sensor_pin}
     name: "Soil Moisture"
     id: soil_moisture
     attenuation: auto
@@ -44,7 +56,7 @@ sensor:
     device_class: moisture
     state_class: measurement
     accuracy_decimals: 0
-    update_interval: 60s
+    update_interval: never   # read only on demand, see measure_and_sleep
     filters:
       # Replace 2.65 (dry) and 1.25 (wet) with your measured voltages
       - calibrate_linear:
@@ -56,6 +68,15 @@ sensor:
           if (x > 100.0) return 100.0;
           return x;
 
+script:
+  - id: measure_and_sleep
+    then:
+      - output.turn_on: sensor_power
+      - delay: 1s                    # let the sensor voltage settle
+      - component.update: soil_moisture
+      - delay: 2s                    # give MQTT time to send the value
+      - output.turn_off: sensor_power
+      - deep_sleep.enter: {}
 
 mqtt:
   broker: homeassistant.lan
@@ -63,5 +84,7 @@ mqtt:
   username: !secret mqtt_user
   password: !secret mqtt_password
   topic_prefix: 'sensors'
-  birth_message: 
-  will_message: 
+  birth_message:
+  will_message:
+  on_connect:
+    - script.execute: measure_and_sleep
