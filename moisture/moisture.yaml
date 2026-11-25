@@ -1,0 +1,67 @@
+# Board: ESPHome Starter Kit By Apollo (Apollo Automation)
+# Definition: definitions/boards/apollo-esk-1/manifest.yaml
+
+substitutions:
+  name: esphome-moisture
+  friendly_name: ESPHome-moisture
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  area: Garden
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+    
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    encryption:
+    
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: ESPHome-moistur Fallback Hotspot
+    password: "9zh5JcGIjSAU"
+
+captive_portal:
+
+sensor:
+  - platform: adc
+    pin: GPIO34
+    name: "Soil Moisture"
+    id: soil_moisture
+    attenuation: auto
+    unit_of_measurement: "%"
+    device_class: moisture
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 60s
+    filters:
+      # Replace 2.65 (dry) and 1.25 (wet) with your measured voltages
+      - calibrate_linear:
+          - 2.65 -> 0.0
+          - 1.25 -> 100.0
+      # Clamp values so readings never go below 0% or above 100%
+      - lambda: |-
+          if (x < 0.0) return 0.0;
+          if (x > 100.0) return 100.0;
+          return x;
+
+
+mqtt:
+  broker: homeassistant.lan
+  port: 1883
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+  topic_prefix: 'sensors'
+  birth_message: 
+  will_message: 
